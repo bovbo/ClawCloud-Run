@@ -1,6 +1,6 @@
 """
 ClawCloud 自动登录脚本
-- 自动检测区域跳转（如 ap-northeast-1.run.claw.cloud）
+- 自动检测区域跳转（如 ap-southeast-1.console.claw.cloud）
 - 等待设备验证批准（30秒）
 - 每次登录后自动更新 Cookie
 - Telegram 通知
@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 
 # ==================== 配置 ====================
 # 固定登录入口，OAuth后会自动跳转到实际区域
-LOGIN_ENTRY_URL = "https://ap-northeast-1.run.claw.cloud"
+LOGIN_ENTRY_URL = "https://ap-southeast-1.run.claw.cloud"
 SIGNIN_URL = f"{LOGIN_ENTRY_URL}/signin"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
 TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
@@ -216,17 +216,17 @@ class AutoLogin:
     def detect_region(self, url):
         """
         从 URL 中检测区域信息
-        例如: https://ap-northeast-1.run.claw.cloud... -> ap-southeast-1
+        例如: https://ap-southeast-1.run.claw.cloud/... -> ap-southeast-1
         """
         try:
             parsed = urlparse(url)
-            host = parsed.netloc  # 如 "ap-northeast-1.run.claw.cloud"
+            host = parsed.netloc  # 如 "ap-southeast-1.console.claw.cloud"
             
             # 检查是否是区域子域名格式
             # 格式: {region}.console.claw.cloud
-            if host.endswith('.console.claw.cloud'):
-                region = host.replace('.console.claw.cloud', '')
-                if region and region != 'console':  # 排除无效情况
+            if host.endswith('.run.claw.cloud'):
+                region = host.replace('.run.claw.cloud', '')
+                if region and region != 'run':  # 排除无效情况
                     self.detected_region = region
                     self.region_base_url = f"https://{host}"
                     self.log(f"检测到区域: {region}", "SUCCESS")
@@ -242,7 +242,7 @@ class AutoLogin:
                 if region_match:
                     region = region_match.group(1)
                     self.detected_region = region
-                    self.region_base_url = f"https://{region}.console.claw.cloud"
+                    self.region_base_url = f"https://{region}.run.claw.cloud"
                     self.log(f"从路径检测到区域: {region}", "SUCCESS")
                     return region
             
