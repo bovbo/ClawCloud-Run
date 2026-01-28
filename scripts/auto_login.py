@@ -8,6 +8,7 @@ ClawCloud 自动登录脚本
 
 import base64
 import os
+import random
 import re
 import sys
 import time
@@ -17,11 +18,15 @@ import requests
 from playwright.sync_api import sync_playwright
 
 # ==================== 配置 ====================
+# 代理配置 (留空则不使用)
+# 格式: socks5://user:pass@host:port 或 http://user:pass@host:port
+PROXY_DSN = os.environ.get("PROXY_DSN", "").strip()
+
 # 固定登录入口，OAuth后会自动跳转到实际区域
-LOGIN_ENTRY_URL = "https://ap-southeast-1.run.claw.cloud"
+LOGIN_ENTRY_URL = "https://console.run.claw.cloud/login"
 SIGNIN_URL = f"{LOGIN_ENTRY_URL}/signin"
 DEVICE_VERIFY_WAIT = 30  # Mobile验证 默认等 30 秒
-TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "120"))  # 2FA验证 默认等 120 秒
+TWO_FACTOR_WAIT = int(os.environ.get("TWO_FACTOR_WAIT", "360"))  # 2FA验证 默认等 120 秒
 
 
 class Telegram:
@@ -182,8 +187,8 @@ class AutoLogin:
         self.n = 0
         
         # 区域相关
-        self.detected_region = None  # 检测到的区域，如 "ap-southeast-1"
-        self.region_base_url = None  # 检测到的区域基础 URL
+        self.detected_region = 'eu-central-1'  # 检测到的区域，如 "ap-southeast-1"
+        self.region_base_url = 'https://eu-central-1.run.claw.cloud'  # 检测到的区域基础 URL
         
     def log(self, msg, level="INFO"):
         icons = {"INFO": "ℹ️", "SUCCESS": "✅", "ERROR": "❌", "WARN": "⚠️", "STEP": "🔹"}
@@ -206,6 +211,10 @@ class AutoLogin:
             try:
                 el = page.locator(s).first
                 if el.is_visible(timeout=3000):
+                    # 模拟人类随机延迟
+                    time.sleep(random.uniform(0.5, 1.5))
+                    el.hover() # 先悬停
+                    time.sleep(random.uniform(0.2, 0.5))
                     el.click()
                     self.log(f"已点击: {desc}", "SUCCESS")
                     return True
@@ -216,7 +225,7 @@ class AutoLogin:
     def detect_region(self, url):
         """
         从 URL 中检测区域信息
-        例如: https://ap-southeast-1.run.claw.cloud/... -> ap-southeast-1
+        例如: https://ap-southeast-1.console.claw.cloud/... -> ap-southeast-1
         """
         try:
             parsed = urlparse(url)
@@ -224,9 +233,9 @@ class AutoLogin:
             
             # 检查是否是区域子域名格式
             # 格式: {region}.console.claw.cloud
-            if host.endswith('.run.claw.cloud'):
-                region = host.replace('.run.claw.cloud', '')
-                if region and region != 'run':  # 排除无效情况
+            if host.endswith('.console.claw.cloud'):
+                region = host.replace('.console.claw.cloud', '')
+                if region and region != 'console':  # 排除无效情况
                     self.detected_region = region
                     self.region_base_url = f"https://{host}"
                     self.log(f"检测到区域: {region}", "SUCCESS")
@@ -242,7 +251,7 @@ class AutoLogin:
                 if region_match:
                     region = region_match.group(1)
                     self.detected_region = region
-                    self.region_base_url = f"https://{region}.run.claw.cloud"
+                    self.region_base_url = f"https://{region}.console.claw.cloud"
                     self.log(f"从路径检测到区域: {region}", "SUCCESS")
                     return region
             
@@ -464,7 +473,9 @@ class AutoLogin:
             try:
                 el = page.locator(sel).first
                 if el.is_visible(timeout=2000):
-                    el.fill(code)
+                    el.click()
+                    time.sleep(random.uniform(0.2, 0.5))
+                    el.type(code, delay=random.randint(50, 150))
                     self.log(f"已填入验证码", "SUCCESS")
                     time.sleep(1)
 
@@ -487,6 +498,7 @@ class AutoLogin:
                             pass
 
                     if not submitted:
+                        time.sleep(random.uniform(0.3, 0.8))
                         page.keyboard.press("Enter")
                         self.log("已按 Enter 提交", "SUCCESS")
 
@@ -516,8 +528,19 @@ class AutoLogin:
         self.shot(page, "github_登录页")
         
         try:
-            page.locator('input[name="login"]').fill(self.username)
-            page.locator('input[name="password"]').fill(self.password)
+            # 模拟人工输入
+            user_input = page.locator('input[name="login"]')
+            user_input.click()
+            time.sleep(random.uniform(0.3, 0.8))
+            user_input.type(self.username, delay=random.randint(30, 100))
+
+            time.sleep(random.uniform(0.5, 1.0))
+
+            pass_input = page.locator('input[name="password"]')
+            pass_input.click()
+            time.sleep(random.uniform(0.3, 0.8))
+            pass_input.type(self.password, delay=random.randint(30, 100))
+
             self.log("已输入凭据")
         except Exception as e:
             self.log(f"输入失败: {e}", "ERROR")
@@ -677,7 +700,8 @@ class AutoLogin:
             else:
                 # for s in self.shots[-3:]:
                 #     self.tg.photo(s, s)
-                self.tg.photo(self.shots[-1], "完成")
+                if self.shots:
+                   self.tg.photo(self.shots[-1], "完成")
     
     def run(self):
         print("\n" + "="*50)
@@ -695,12 +719,66 @@ class AutoLogin:
             sys.exit(1)
         
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
+            # 代理配置解析
+            launch_args = {
+                "headless": True,
+                "args": [
+                    '--no-sandbox',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-infobars',
+                    '--exclude-switches=enable-automation',
+                ]
+            }
+
+            if PROXY_DSN:
+                try:
+                    p_url = urlparse(PROXY_DSN)
+                    proxy_config = {
+                        "server": f"{p_url.scheme}://{p_url.hostname}:{p_url.port}"
+                    }
+                    if p_url.username:
+                        proxy_config["username"] = p_url.username
+                    if p_url.password:
+                        proxy_config["password"] = p_url.password
+
+                    launch_args["proxy"] = proxy_config
+                    self.log(f"启用代理: {proxy_config['server']}")
+                except Exception as e:
+                    self.log(f"代理配置解析失败: {e}", "ERROR")
+
+            browser = p.chromium.launch(**launch_args)
             context = browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
             )
             page = context.new_page()
+            page.add_init_script("""
+                // 基础反检测
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+
+                // 模拟插件 (Headless Chrome 默认无插件)
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+
+                // 模拟语言
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en']
+                });
+
+                // 模拟 window.chrome
+                window.chrome = { runtime: {} };
+
+                // 绕过权限检测
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+                );
+            """)
             
             try:
                 # 预加载 Cookie
