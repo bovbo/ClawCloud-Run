@@ -2,7 +2,7 @@ name: ClawCloud 自动登录保活
 
 on:
   schedule:
-    - cron: '0 8 */6 * *'  # 每6天运行一次，执行时间为 UTC 8:00（北京时间 16:00）
+    - cron: '0 8 */6 * *'  #每6天运行一次，执行时间为UTC 8:00（北京时间16:00）
   workflow_dispatch:
 
 jobs:
@@ -12,10 +12,10 @@ jobs:
     
     steps:
       - name: 检出代码
-        uses: actions/checkout@v5      # 升级到 v5，基于 Node.js 24
+        uses: actions/checkout@v4
 
       - name: 设置 Python
-        uses: actions/setup-python@v6  # 升级到 v6，基于 Node.js 24
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
